@@ -3,12 +3,14 @@ import requests
 import html
 import re
 from datetime import datetime
+from urllib.parse import quote
 
 # ── Config ────────────────────────────────────────────────────────────────────
 ZENDESK_SUBDOMAIN = "help-usm"
 ZENDESK_BASE = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com/api/v2/help_center"
 LOCALE = "en-us"
 CACHE_TTL = 300  # 5 min — keeps content fresh from Zendesk
+CANONICAL_BASE = "https://www.usmobile.com/help"
 
 st.set_page_config(
     page_title="US Mobile Help Center",
@@ -358,32 +360,114 @@ def section_name_by_id(sections, sid):
     return s["name"] if s else ""
 
 
-# ── State ─────────────────────────────────────────────────────────────────────
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-if "article_id" not in st.session_state:
-    st.session_state.article_id = None
-if "section_id" not in st.session_state:
-    st.session_state.section_id = None
-if "search_query" not in st.session_state:
-    st.session_state.search_query = ""
+def slugify(text):
+    """Convert text to URL slug."""
+    if not text:
+        return ""
+    slug = text.lower().strip()
+    slug = re.sub(r'[^\w\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug).strip('-')
+    return slug
+
+
+def article_slug(article):
+    """Get slug from Zendesk html_url or title."""
+    html_url = article.get("html_url", "")
+    # Extract slug from Zendesk URL like .../articles/12345-Article-Title
+    match = re.search(r'/articles/\d+-(.+)$', html_url)
+    if match:
+        return match.group(1)
+    return slugify(article.get("title", str(article.get("id", ""))))
+
+
+def section_slug(section):
+    """Get slug from section name."""
+    return slugify(section.get("name", str(section.get("id", ""))))
+
+
+def find_article_by_slug(articles, slug):
+    """Find article matching a slug."""
+    for a in articles:
+        if article_slug(a) == slug:
+            return a
+    # Fallback: try matching by ID
+    try:
+        aid = int(slug)
+        return next((a for a in articles if a["id"] == aid), None)
+    except (ValueError, TypeError):
+        return None
+
+
+def find_section_by_slug(sections, slug):
+    """Find section matching a slug."""
+    for s in sections:
+        if section_slug(s) == slug:
+            return s
+    try:
+        sid = int(slug)
+        return next((s for s in sections if s["id"] == sid), None)
+    except (ValueError, TypeError):
+        return None
+
+
+def inject_canonical(path=""):
+    """Inject canonical URL and Open Graph meta tags into the page head."""
+    canonical = f"{CANONICAL_BASE}/{path}" if path else CANONICAL_BASE
+    st.markdown(f'<link rel="canonical" href="{canonical}" />', unsafe_allow_html=True)
+
+
+def inject_meta(title, description="", path=""):
+    """Inject page title, canonical, and meta description."""
+    canonical = f"{CANONICAL_BASE}/{path}" if path else CANONICAL_BASE
+    meta = f'<link rel="canonical" href="{canonical}" />'
+    if description:
+        safe_desc = html.escape(description[:160])
+        meta += f'\n<meta name="description" content="{safe_desc}" />'
+    meta += f'\n<meta property="og:title" content="{html.escape(title)}" />'
+    meta += f'\n<meta property="og:url" content="{canonical}" />'
+    if description:
+        meta += f'\n<meta property="og:description" content="{safe_desc}" />'
+    st.markdown(meta, unsafe_allow_html=True)
+
+
+# ── URL-based routing via query params ────────────────────────────────────────
+# URLs:  ?article=slug  |  ?section=slug  |  ?q=search+term  |  (empty = home)
+params = st.query_params
+
+
+def get_current_page():
+    """Determine page from URL query params."""
+    if "article" in params:
+        return "article"
+    if "section" in params:
+        return "section"
+    if "q" in params:
+        return "search"
+    return "home"
+
 
 def go_home():
-    st.session_state.page = "home"
-    st.session_state.article_id = None
-    st.session_state.section_id = None
-    st.session_state.search_query = ""
+    st.query_params.clear()
 
-def go_article(aid):
-    st.session_state.page = "article"
-    st.session_state.article_id = aid
+def go_article_url(art):
+    st.query_params.clear()
+    st.query_params["article"] = article_slug(art)
 
-def go_section(sid):
-    st.session_state.page = "section"
-    st.session_state.section_id = sid
+def go_article_by_slug(slug):
+    st.query_params.clear()
+    st.query_params["article"] = slug
 
-def go_search():
-    st.session_state.page = "search"
+def go_section_url(sec):
+    st.query_params.clear()
+    st.query_params["section"] = section_slug(sec)
+
+def go_search_url(query):
+    st.query_params.clear()
+    st.query_params["q"] = query
+
+
+current_page = get_current_page()
 
 
 # ── Fetch data ────────────────────────────────────────────────────────────────
@@ -407,7 +491,8 @@ st.markdown("""
 # ══════════════════════════════════════════════════════════════════════════════
 # HOME
 # ══════════════════════════════════════════════════════════════════════════════
-if st.session_state.page == "home":
+if current_page == "home":
+    inject_meta("US Mobile Help Center", "Get help with US Mobile plans, eSIM setup, billing, troubleshooting, and more.")
 
     # Hero
     st.markdown("""
@@ -422,8 +507,7 @@ if st.session_state.page == "home":
     with col_s:
         q = st.text_input("Search", placeholder="Search for help articles...", label_visibility="collapsed", key="hs")
         if q:
-            st.session_state.search_query = q
-            go_search()
+            go_search_url(q)
             st.rerun()
 
     # Section pills (these are the main navigational categories)
@@ -441,7 +525,7 @@ if st.session_state.page == "home":
         for i, sec in enumerate(sections):
             with scols[i % ncols]:
                 if st.button(sec["name"], key=f"sec_{sec['id']}", use_container_width=True):
-                    go_section(sec["id"])
+                    go_section_url(sec)
                     st.rerun()
 
     # ── Recently Updated ──────────────────────────────────────────────────────
@@ -464,7 +548,7 @@ if st.session_state.page == "home":
                         </div>
                     </div>""", unsafe_allow_html=True)
                     if st.button("Read", key=f"r_{art['id']}", use_container_width=True):
-                        go_article(art["id"])
+                        go_article_url(art)
                         st.rerun()
 
     # ── Most Popular (by votes) ───────────────────────────────────────────────
@@ -489,7 +573,7 @@ if st.session_state.page == "home":
                             </div>
                         </div>""", unsafe_allow_html=True)
                         if st.button("Read", key=f"p_{art['id']}", use_container_width=True):
-                            go_article(art["id"])
+                            go_article_url(art)
                             st.rerun()
 
     # ── Browse All Sections ───────────────────────────────────────────────────
@@ -514,24 +598,40 @@ if st.session_state.page == "home":
                         {items_html}
                     </div>""", unsafe_allow_html=True)
                     if st.button("View all", key=f"vs_{sec['id']}", use_container_width=True):
-                        go_section(sec["id"])
+                        go_section_url(sec)
                         st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ARTICLE DETAIL
 # ══════════════════════════════════════════════════════════════════════════════
-elif st.session_state.page == "article":
-    article = fetch_article(st.session_state.article_id)
-    if not article:
-        # fallback to cached list
-        article = next((a for a in all_articles if a["id"] == st.session_state.article_id), None)
+elif current_page == "article":
+    art_slug = params.get("article", "")
+    article = find_article_by_slug(all_articles, art_slug)
+    # If not in cached list, try fetching directly (for freshly published articles)
+    if not article and art_slug:
+        # Try by ID if slug looks numeric
+        try:
+            article = fetch_article(int(art_slug))
+        except (ValueError, TypeError):
+            pass
 
     if article:
+        slug = article_slug(article)
         sname = section_name_by_id(sections, article.get("section_id"))
+        sec_obj = next((s for s in sections if s["id"] == article.get("section_id")), None)
+        description = strip_html(article.get("body", ""), 160)
+
+        inject_meta(
+            title=f"{article['title']} - US Mobile Help Center",
+            description=description,
+            path=f"?article={quote(slug)}",
+        )
+
+        # Breadcrumb with working links
         st.markdown(f"""
         <div class="breadcrumb">
-            <a href="#">Home</a> / <a href="#">{html.escape(sname)}</a> / {html.escape(article['title'])}
+            <a href="?">Home</a> / {('<a href="?section=' + section_slug(sec_obj) + '">' + html.escape(sname) + '</a> / ') if sec_obj else ''}{html.escape(article['title'])}
         </div>""", unsafe_allow_html=True)
 
         if st.button("← Back", key="back_art"):
@@ -577,7 +677,7 @@ elif st.session_state.page == "article":
                         <p class="excerpt">{html.escape(strip_html(rel.get('body',''), 100))}</p>
                     </div>""", unsafe_allow_html=True)
                     if st.button("Read", key=f"rel_{rel['id']}", use_container_width=True):
-                        go_article(rel["id"])
+                        go_article_url(rel)
                         st.rerun()
     else:
         st.warning("Article not found.")
@@ -589,10 +689,18 @@ elif st.session_state.page == "article":
 # ══════════════════════════════════════════════════════════════════════════════
 # SECTION PAGE
 # ══════════════════════════════════════════════════════════════════════════════
-elif st.session_state.page == "section":
-    sec = next((s for s in sections if s["id"] == st.session_state.section_id), None)
+elif current_page == "section":
+    sec_slug_param = params.get("section", "")
+    sec = find_section_by_slug(sections, sec_slug_param)
+
     if sec:
         sec_articles = [a for a in all_articles if a.get("section_id") == sec["id"]]
+        inject_meta(
+            title=f"{sec['name']} - US Mobile Help Center",
+            description=f"Browse {len(sec_articles)} help articles about {sec['name']}.",
+            path=f"?section={quote(section_slug(sec))}",
+        )
+
         st.markdown(f"""
         <div class="category-header">
             <h2>{html.escape(sec['name'])}</h2>
@@ -612,7 +720,7 @@ elif st.session_state.page == "section":
                     <p class="snippet">{html.escape(excerpt)}</p>
                 </div>""", unsafe_allow_html=True)
                 if st.button(art["title"][:50], key=f"sa_{art['id']}", use_container_width=True):
-                    go_article(art["id"])
+                    go_article_url(art)
                     st.rerun()
         else:
             st.markdown("""
@@ -630,7 +738,10 @@ elif st.session_state.page == "section":
 # ══════════════════════════════════════════════════════════════════════════════
 # SEARCH
 # ══════════════════════════════════════════════════════════════════════════════
-elif st.session_state.page == "search":
+elif current_page == "search":
+    search_query = params.get("q", "")
+    inject_meta("Search - US Mobile Help Center", path=f"?q={quote(search_query)}")
+
     st.markdown("""
     <div class="category-header">
         <h2>Search Results</h2>
@@ -640,14 +751,15 @@ elif st.session_state.page == "search":
         go_home()
         st.rerun()
 
-    sq = st.text_input("Search", value=st.session_state.search_query, placeholder="Search...", label_visibility="collapsed", key="spi")
-    if sq != st.session_state.search_query:
-        st.session_state.search_query = sq
+    sq = st.text_input("Search", value=search_query, placeholder="Search...", label_visibility="collapsed", key="spi")
+    if sq and sq != search_query:
+        go_search_url(sq)
+        st.rerun()
 
-    if st.session_state.search_query:
-        results = search_articles(st.session_state.search_query)
+    if search_query:
+        results = search_articles(search_query)
         if results:
-            st.markdown(f"<p style='font-family:Inter;color:#6b7280;margin:6px 0 16px;font-size:14px;'>{len(results)} result{'s' if len(results)!=1 else ''} for \"{html.escape(st.session_state.search_query)}\"</p>", unsafe_allow_html=True)
+            st.markdown(f"<p style='font-family:Inter;color:#6b7280;margin:6px 0 16px;font-size:14px;'>{len(results)} result{'s' if len(results)!=1 else ''} for \"{html.escape(search_query)}\"</p>", unsafe_allow_html=True)
             for art in results:
                 snippet = strip_html(art.get("body", art.get("snippet", "")), 200)
                 st.markdown(f"""
@@ -656,7 +768,7 @@ elif st.session_state.page == "search":
                     <p class="snippet">{html.escape(snippet)}</p>
                 </div>""", unsafe_allow_html=True)
                 if st.button("View", key=f"sr_{art['id']}", use_container_width=True):
-                    go_article(art["id"])
+                    go_article_url(art)
                     st.rerun()
         else:
             st.markdown("""
