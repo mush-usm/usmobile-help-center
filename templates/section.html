@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}{{ section.name }} - US Mobile Help Center{% endblock %}
+{% block meta %}
+<link rel="canonical" href="{{ canonical_base }}/section/{{ section._slug }}" />
+<meta name="description" content="Browse {{ articles | length }} help articles about {{ section.name }}." />
+{% endblock %}
+
+{% block content %}
+<div class="category-header">
+    <h2>{{ section.name }}</h2>
+    <p>{{ articles | length }} articles</p>
+</div>
+
+<div class="container">
+    <a href="/" class="back-link">&larr; Back to Home</a>
+
+    {% if articles %}
+        {% for art in articles %}
+        <div class="article-list-item">
+            <h3><a href="/article/{{ art._slug }}">{{ art.title }}</a></h3>
+            <p class="snippet">{{ art._excerpt }}</p>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state">
+        <h3>No articles yet</h3>
+        <p>Articles will appear here once published.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} - US Mobile Help Center{% endblock %}
+{% block meta %}
+<link rel="canonical" href="{{ canonical_base }}/article/{{ article._slug }}" />
+<meta name="description" content="{{ article._excerpt }}" />
+<meta property="og:title" content="{{ article.title }} - US Mobile Help Center" />
+<meta property="og:url" content="{{ canonical_base }}/article/{{ article._slug }}" />
+<meta property="og:description" content="{{ article._excerpt }}" />
+<meta property="og:type" content="article" />
+{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="breadcrumb">
+        <a href="/">Home</a>
+        {% if section %} / <a href="/section/{{ section._slug }}">{{ section.name }}</a>{% endif %}
+        / {{ article.title }}
+    </div>
+
+    <a href="/" class="back-link">&larr; Back</a>
+
+    <div class="article-detail">
+        <h1>{{ article.title }}</h1>
+        <div class="article-meta">
+            <span>Updated {{ article._updated }}</span>
+            <span>Created {{ article._created }}</span>
+            {% if article.vote_sum %}<span>&#9650; {{ article.vote_sum }} votes</span>{% endif %}
+        </div>
+        <div class="article-body">
+            {{ article.body | safe }}
+        </div>
+        {% if article.label_names %}
+        <div class="article-labels">
+            {% for label in article.label_names[:6] %}
+            <span class="badge">{{ label }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        <div class="vote-section">
+            <p>Was this article helpful?</p>
+        </div>
+    </div>
+
+    {% if related %}
+    <div class="section-heading" style="max-width:820px;margin-left:auto;margin-right:auto;">
+        More from {{ section.name if section else "this section" }}
+    </div>
+    <div class="grid-4">
+        {% for rel in related %}
+        <a href="/article/{{ rel._slug }}" class="article-card">
+            <h3>{{ rel.title }}</h3>
+            <p class="excerpt">{{ rel._excerpt_short }}</p>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

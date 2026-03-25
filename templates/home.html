@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}US Mobile Help Center{% endblock %}
+{% block meta %}
+<link rel="canonical" href="{{ canonical_base }}" />
+<meta name="description" content="Get help with US Mobile plans, eSIM setup, billing, troubleshooting, and more." />
+{% endblock %}
+
+{% block content %}
+<!-- Hero -->
+<div class="hero">
+    <h1>How can we help?</h1>
+    <p>Search our knowledge base or browse by topic</p>
+    <form action="/search" method="get" class="search-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" name="q" placeholder="Search for help articles..." autocomplete="off">
+    </form>
+    {% if sections %}
+    <div class="pill-grid">
+        {% for sec in sections %}
+        <a href="/section/{{ sec._slug }}" class="pill">{{ sec.name }}</a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+<div class="container">
+    <!-- Recently Updated -->
+    {% if recent %}
+    <div class="section-heading">Recently Updated</div>
+    <div class="grid">
+        {% for art in recent %}
+        <a href="/article/{{ art._slug }}" class="article-card">
+            <h3>{{ art.title }}</h3>
+            <p class="excerpt">{{ art._excerpt }}</p>
+            <div class="meta">
+                {% if art._section_name %}<span class="badge">{{ art._section_name }}</span>{% endif %}
+                <span>{{ art._date }}</span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Most Popular -->
+    {% if popular %}
+    <div class="section-heading">Most Popular</div>
+    <div class="grid">
+        {% for art in popular %}
+        <a href="/article/{{ art._slug }}" class="article-card">
+            <h3>{{ art.title }}</h3>
+            <p class="excerpt">{{ art._excerpt }}</p>
+            <div class="meta">
+                {% if art._section_name %}<span class="badge">{{ art._section_name }}</span>{% endif %}
+                <span>{{ art._date }}</span>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Browse by Topic -->
+    {% if sections %}
+    <div class="section-heading">Browse by Topic</div>
+    <div class="grid">
+        {% for sec in sections %}
+        <div class="section-card">
+            <h3><a href="/section/{{ sec._slug }}">{{ sec.name }}</a></h3>
+            <p class="sec-count">{{ sec._article_count }} articles</p>
+            {% for art in sec._preview %}
+            <div class="sec-article">
+                <span class="dot">&#9679;</span>
+                <a href="/article/{{ art._slug }}">{{ art.title }}</a>
+            </div>
+            {% endfor %}
+            {% if sec._article_count > 4 %}
+            <div class="sec-article sec-more">
+                <a href="/section/{{ sec._slug }}">+ {{ sec._article_count - 4 }} more articles</a>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
